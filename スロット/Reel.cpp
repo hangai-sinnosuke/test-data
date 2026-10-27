@@ -2,14 +2,69 @@
 #include "DxLib.h"
 #include <cstdlib>
 
+//ブドウ確率
+static const int SYMBOL_WEIGHT_GRAPE = 75;
+//リプレイ確率
+static const int SYMBOL_WEIGHT_REPLAY = 115;
+//チェリー確率
+static const int SYMBOL_WEIGHT_CHERRY = 3;
+//ベル確率
+static const int SYMBOL_WEIGHT_BELL = 10;
+
+static int GetSymbolWeight(int symbol)
+{
+    switch (symbol)
+    {
+    case GRAPE: return SYMBOL_WEIGHT_GRAPE;
+    case REPLAY: return SYMBOL_WEIGHT_REPLAY;
+    case CHERRY: return SYMBOL_WEIGHT_CHERRY;
+    case BELL: return SYMBOL_WEIGHT_BELL;
+    case BAR: return 1;
+    case SEVEN: return 1;
+    default: return 0;
+    }
+}
+
+// リール上にある図柄から、重みに応じて停止位置を選ぶ
+static int ChooseWeightedPosition(const int* strip, int stripLength)
+{
+    int totalWeight = 0;
+
+    for (int i = 0; i < stripLength; i++)
+    {
+        totalWeight += GetSymbolWeight(strip[i]);
+    }
+
+    if (totalWeight <= 0)
+    {
+        return rand() % stripLength;
+    }
+
+    int ticket = rand() % totalWeight;
+
+    for (int i = 0; i < stripLength; i++)
+    {
+        int weight = GetSymbolWeight(strip[i]);
+
+        if (ticket < weight)
+        {
+            return i;
+        }
+
+        ticket -= weight;
+    }
+
+    return rand() % stripLength;
+}
+
 Reel::Reel()
 {
-    //リール上の図柄の並び。後で確率に合わせて調整できる
+    // リール上の図柄の並び
     int initialStrips[3][STRIP_LENGTH] =
     {
-        { GRAPE, REPLAY, GRAPE, BAR, SEVEN, BELL }, // 左
+        { GRAPE, REPLAY, CHERRY, BAR, SEVEN, BELL }, // 左
         { GRAPE, REPLAY, CHERRY, BAR, SEVEN, BELL }, // 中央
-        { GRAPE, REPLAY, BAR, GRAPE, SEVEN, BELL }   // 右：チェリーなし
+        { GRAPE, REPLAY, BAR, GRAPE, SEVEN, BELL }  // 右：チェリーなし
     };
 
     for (int reel = 0; reel < 3; reel++)
@@ -31,12 +86,12 @@ bool Reel::LoadImages()
     const char* fileNames[7] =
     {
         "",
-        "img/budou.png", //ブドウ
-        "img/tuno.png",  //ゾウのリプレイ
-        "img/tyeri.png", //チェリー
-        "img/ber.png",   //BAR
-        "img/nana.png",  //7
-        "img/beru.png"   //ベル
+        "img/budou.png", // ブドウ
+        "img/tuno.png",  // リプレイ
+        "img/tyeri.png", // チェリー
+        "img/ber.png",   // BAR
+        "img/nana.png",  // 7
+        "img/beru.png"   // ベル
     };
 
     for (int reel = 0; reel < 3; reel++)
@@ -84,7 +139,7 @@ void Reel::StartSpin(int bonusType)
     }
     else if (bonusType == 2)
     {
-        // REGULAR：7・7・BAR
+        // REGULARは7・7・BAR
         targetPositions[0] = 4;
         targetPositions[1] = 4;
         targetPositions[2] = 2;
@@ -94,8 +149,11 @@ void Reel::StartSpin(int bonusType)
         // 通常時は、7やBARが有効ラインにそろわない位置を選ぶ
         int lineRows[5][3] =
         {
-            { 0, 0, 0 },{ 1, 1, 1 },{ 2, 2, 2 },
-            { 0, 1, 2 },{ 2, 1, 0 }
+            { 0, 0, 0 },
+            { 1, 1, 1 },
+            { 2, 2, 2 },
+            { 0, 1, 2 },
+            { 2, 1, 0 }
         };
 
         bool forbidden;
@@ -104,10 +162,13 @@ void Reel::StartSpin(int bonusType)
         {
             for (int reel = 0; reel < 3; reel++)
             {
-                targetPositions[reel] = rand() % STRIP_LENGTH;
+                // 図柄ごとの設定重みに応じて停止位置を抽選
+                targetPositions[reel] =
+                    ChooseWeightedPosition(symbolStrips[reel], STRIP_LENGTH);
             }
 
             forbidden = false;
+            int winningSymbol = 0;
 
             for (int line = 0; line < 5; line++)
             {
@@ -136,6 +197,40 @@ void Reel::StartSpin(int bonusType)
                 {
                     forbidden = true;
                 }
+
+                // 異なる種類の当たり図柄が別ラインに同時成立しないようにする
+                int lineWinningSymbol = 0;
+                if (symbolsOnLine[0] == GRAPE &&
+                    symbolsOnLine[1] == GRAPE &&
+                    symbolsOnLine[2] == GRAPE)
+                {
+                    lineWinningSymbol = GRAPE;
+                }
+                else if (symbolsOnLine[0] == BELL &&
+                    symbolsOnLine[1] == BELL &&
+                    symbolsOnLine[2] == BELL)
+                {
+                    lineWinningSymbol = BELL;
+                }
+                else if (symbolsOnLine[0] == REPLAY &&
+                    symbolsOnLine[1] == REPLAY &&
+                    symbolsOnLine[2] == REPLAY)
+                {
+                    lineWinningSymbol = REPLAY;
+                }
+
+                if (lineWinningSymbol != 0)
+                {
+                    if (winningSymbol != 0 &&
+                        winningSymbol != lineWinningSymbol)
+                    {
+                        forbidden = true;
+                    }
+                    else
+                    {
+                        winningSymbol = lineWinningSymbol;
+                    }
+                }
             }
         } while (forbidden);
     }
@@ -156,7 +251,7 @@ void Reel::Update()
             continue;
         }
 
-        //数フレームごとに図柄を1つ進めて回転して見せる
+        // 数フレームごとに図柄を1つ進めて回転して見せる
         frameCounters[reel]++;
         if (frameCounters[reel] >= 7)
         {
@@ -173,7 +268,7 @@ void Reel::StopReel(int reel)
         return;
     }
 
-    //先に決めておいた位置で停止する
+    // 先に決めておいた位置で停止
     positions[reel] = targetPositions[reel];
     spinning[reel] = false;
 }

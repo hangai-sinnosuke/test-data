@@ -11,17 +11,23 @@ bool IsNewClick(int mouseInput, int previousMouseInput)
 }
 
 // 1/255で当選し、BIGとREGULARを同じ確率で選ぶ
+bool IsNewKeyPress(int keyCode, bool& previousKeyState)
+{
+    bool pressed = CheckHitKey(keyCode) != 0;
+    bool newPress = pressed && !previousKeyState;
+    previousKeyState = pressed;
+    return newPress;
+}
+
 int DrawBonusLottery()
 {
-    if (rand() % 255 == 0)
+    if (rand() %  5== 0)
     {
         return rand() % 2 + 1; // 1=BIG、2=REGULAR
     }
 
     return 0; // はずれ
 }
-
-const int CHERRY_COMBO_DENOMINATOR = 600; // 仮設定：1/128
 
 //ボタンを描画する
 void DrawButton(int x1, int y1, int x2, int y2, const char* label)
@@ -39,6 +45,18 @@ bool IsMouseIn(int mouseX, int mouseY,
         mouseY >= y1 && mouseY <= y2;
 }
 
+void ShowAtariLamp(bool& atariLamp, int& atariLampEndTime,
+    int soundHandle, int duration)
+{
+    if (!atariLamp)
+    {
+        PlaySoundMem(soundHandle, DX_PLAYTYPE_BACK);
+    }
+
+    atariLamp = true;
+    atariLampEndTime = GetNowCount() + duration;
+}
+
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 {
     SetWindowText("DxLib Slot");
@@ -50,6 +68,35 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
         return -1;
     }
 
+    int hitSoundHandle = LoadSoundMem("Sound/gako.mp3");
+    int startSoundHandle = LoadSoundMem("Sound/reba.mp3");
+    int buttonSoundHandle = LoadSoundMem("Sound/btn.mp3");
+
+    if (hitSoundHandle == -1 ||
+        startSoundHandle == -1 ||
+        buttonSoundHandle == -1)
+    {
+        if (hitSoundHandle != -1) DeleteSoundMem(hitSoundHandle);
+        if (startSoundHandle != -1) DeleteSoundMem(startSoundHandle);
+        if (buttonSoundHandle != -1) DeleteSoundMem(buttonSoundHandle);
+        DxLib_End();
+        return -1;
+    }
+
+    int normalLampImage = LoadGraph("img/GoGO B.png");
+    int hitLampImage = LoadGraph("img/GoGo A.png");
+
+    if (normalLampImage == -1 || hitLampImage == -1)
+    {
+        if (normalLampImage != -1) DeleteGraph(normalLampImage);
+        if (hitLampImage != -1) DeleteGraph(hitLampImage);
+        DeleteSoundMem(hitSoundHandle);
+        DeleteSoundMem(startSoundHandle);
+        DeleteSoundMem(buttonSoundHandle);
+        DxLib_End();
+        return -1;
+    }
+
     SetDrawScreen(DX_SCREEN_BACK);
     srand(static_cast<unsigned int>(time(nullptr)));
 
@@ -57,6 +104,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 
     if (!reel.LoadImages())
     {
+        DeleteGraph(normalLampImage);
+        DeleteGraph(hitLampImage);
+        DeleteSoundMem(hitSoundHandle);
+        DeleteSoundMem(startSoundHandle);
+        DeleteSoundMem(buttonSoundHandle);
         DxLib_End();
         return -1;
     }
@@ -72,22 +124,33 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     int medals = 50;
     int selectedBet = 0;
     int previousMouseInput = 0;
+    bool previousSpace = false;
+    bool previousEnter = false;
+    bool previousM = false;
+    bool previousLeftArrow = false;
+    bool previousDownArrow = false;
+    bool previousRightArrow = false;
 
     // 画面表示用のメダル数
     int displayedMedals = medals;
 
     // チェリーで当選し、次の回転で図柄をそろえる
-    int queuedBonusType = 0;
-
     //今回のゲームで掛けた枚数
     int currentBet = 0; 
     //停止後に結果を判定したか
     bool resultChecked = true;
     //無料ゲームが残っているか
     bool freeGameAvailable = false;
-
+    //ランプが光ったかの判別
     bool gogoLamp = false;
+
+    bool atariLamp = false;
+   
+    int atariLampEndTime = 0;
+    //表示時間：ミリ秒
+    const int ATARI_LAMP_DURATION = 1000;
     //当選して、図柄がそろうのを待っているボーナス
+    int queuedBonusType = 0;
     int pendingBonusType = 0;
     //0=通常、1=BIG、2=REGULAR
     int activeBonusType = 0;
@@ -103,6 +166,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 
         bool clicked = IsNewClick(mouseInput, previousMouseInput);
         previousMouseInput = mouseInput;
+
+        bool spacePressed = IsNewKeyPress(KEY_INPUT_SPACE, previousSpace);
+        bool enterPressed = IsNewKeyPress(KEY_INPUT_RETURN, previousEnter);
+        bool mPressed = IsNewKeyPress(KEY_INPUT_M, previousM);
+        bool leftArrowPressed = IsNewKeyPress(KEY_INPUT_LEFT, previousLeftArrow);
+        bool downArrowPressed = IsNewKeyPress(KEY_INPUT_DOWN, previousDownArrow);
+        bool rightArrowPressed = IsNewKeyPress(KEY_INPUT_RIGHT, previousRightArrow);
 
         // F1を押した瞬間に50枚追加
         bool f1Pressed = CheckHitKey(KEY_INPUT_F1) != 0;
@@ -133,19 +203,25 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
         }
 
         //ベットボタンで掛け枚数を選択する
-        if (clicked && !reel.IsSpinning())
+        if (!reel.IsSpinning())
         {
-            if (IsMouseIn(mouseX, mouseY, 200, 470, 330, 510)
-                && activeBonusType == 0)
+            if (((clicked && IsMouseIn(mouseX, mouseY, 200, 470, 330, 510)) ||
+                (spacePressed && selectedBet == 0 && !freeGameAvailable)) &&
+                activeBonusType == 0)
             {
                 selectedBet = 3;
+                PlaySoundMem(buttonSoundHandle, DX_PLAYTYPE_BACK);
             }
-            else if (IsMouseIn(mouseX, mouseY, 340, 470, 440, 510)
-                && activeBonusType == 0)
+            else if (((clicked && IsMouseIn(mouseX, mouseY, 340, 470, 440, 510)) ||
+                mPressed) && activeBonusType == 0)
             {
                 selectedBet = 1;
+                PlaySoundMem(buttonSoundHandle, DX_PLAYTYPE_BACK);
             }
-            else if (IsMouseIn(mouseX, mouseY, 450, 470, 550, 510))
+            else if ((clicked && IsMouseIn(mouseX, mouseY, 450, 470, 550, 510)) ||
+                enterPressed ||
+                (spacePressed &&
+                    (selectedBet > 0 || freeGameAvailable || activeBonusType != 0)))
             {
                 if (activeBonusType != 0)
                 {
@@ -155,6 +231,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
                         medals -= 2;
                         currentBet = 2;
                         selectedBet = 0;
+                        PlaySoundMem(startSoundHandle, DX_PLAYTYPE_BACK);
 
                         reel.StartSpin();
                         totalGames++;
@@ -167,17 +244,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
                     freeGameAvailable = false;
                     selectedBet = 0;
                     currentBet = 0;
+                    PlaySoundMem(startSoundHandle, DX_PLAYTYPE_BACK);
 
-                    if (queuedBonusType != 0)
-                    {
-                        pendingBonusType = queuedBonusType;
-                        queuedBonusType = 0;
-                    }
-                    else
-                    {
-                        pendingBonusType = DrawBonusLottery();
-                    }
-
+                    pendingBonusType = queuedBonusType;
+                    queuedBonusType = 0;
+                    atariLamp = false;
                     gogoLamp = (pendingBonusType != 0);
                     reel.StartSpin(pendingBonusType);
                     totalGames++;
@@ -187,17 +258,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
                 {
                     currentBet = selectedBet;
                     medals -= currentBet;
+                    PlaySoundMem(startSoundHandle, DX_PLAYTYPE_BACK);
 
-                    if (queuedBonusType != 0)
-                    {
-                        pendingBonusType = queuedBonusType;
-                        queuedBonusType = 0;
-                    }
-                    else
-                    {
-                        pendingBonusType = DrawBonusLottery();
-                    }
-
+                    pendingBonusType = queuedBonusType;
+                    queuedBonusType = 0;
+                    atariLamp = false;
                     gogoLamp = (pendingBonusType != 0);
                     reel.StartSpin(pendingBonusType);
                     selectedBet = 0;
@@ -208,16 +273,28 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
         }
 
         //停止ボタン。左から順に0、1、2
-        if (clicked && reel.IsSpinning())
+        if (reel.IsSpinning())
         {
-            if (IsMouseIn(mouseX, mouseY, 200, 525, 300, 575))
+            if ((clicked && IsMouseIn(mouseX, mouseY, 200, 525, 300, 575)) ||
+                leftArrowPressed)
+            {
                 reel.StopReel(0);
+                PlaySoundMem(buttonSoundHandle, DX_PLAYTYPE_BACK);
+            }
 
-            if (IsMouseIn(mouseX, mouseY, 310, 525, 410, 575))
+            if ((clicked && IsMouseIn(mouseX, mouseY, 310, 525, 410, 575)) ||
+                downArrowPressed)
+            {
                 reel.StopReel(1);
+                PlaySoundMem(buttonSoundHandle, DX_PLAYTYPE_BACK);
+            }
 
-            if (IsMouseIn(mouseX, mouseY, 420, 525, 520, 575))
+            if ((clicked && IsMouseIn(mouseX, mouseY, 420, 525, 520, 575)) ||
+                rightArrowPressed)
+            {
                 reel.StopReel(2);
+                PlaySoundMem(buttonSoundHandle, DX_PLAYTYPE_BACK);
+            }
         }
 
         reel.Update();
@@ -273,34 +350,18 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
                 // 通常時は5本のラインを判定
                 int lineRows[5][3] =
                 {
-                    { 0, 0, 0 }, // 上段
-                    { 1, 1, 1 }, // 中段
-                    { 2, 2, 2 }, // 下段
-                    { 0, 1, 2 }, // 左上から右下
-                    { 2, 1, 0 }  // 左下から右上
+                    { 0, 0, 0 },
+                    { 1, 1, 1 },
+                    { 2, 2, 2 },
+                    { 0, 1, 2 },
+                    { 2, 1, 0 }
                 };
-
-                bool leftCherryOnly = false;
-                bool cherryCombination = false;
 
                 for (int line = 0; line < 5; line++)
                 {
                     int left = reel.GetSymbolAt(0, lineRows[line][0]);
                     int center = reel.GetSymbolAt(1, lineRows[line][1]);
                     int right = reel.GetSymbolAt(2, lineRows[line][2]);
-
-                    // 同じラインで左にチェリー、中央にもあれば複合
-                    if (left == CHERRY)
-                    {
-                        if (center == CHERRY)
-                        {
-                            cherryCombination = true;
-                        }
-                        else
-                        {
-                            leftCherryOnly = true;
-                        }
-                    }
 
                     if (left == GRAPE && center == GRAPE && right == GRAPE)
                     {
@@ -318,18 +379,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
                     }
                 }
 
-                // 左だけのチェリーはボーナス確定
-                if (leftCherryOnly)
+                queuedBonusType = DrawBonusLottery();
+                if (queuedBonusType != 0)
                 {
-                    queuedBonusType = rand() % 2 + 1;
-                    gogoLamp = true;
-                }
-                // 左と中央の複合チェリーは仮確率で抽選
-                else if (cherryCombination &&
-                    rand() % CHERRY_COMBO_DENOMINATOR == 0)
-                {
-                    queuedBonusType = rand() % 2 + 1;
-                    gogoLamp = true;
+                    ShowAtariLamp(atariLamp, atariLampEndTime,
+                        hitSoundHandle, ATARI_LAMP_DURATION);
                 }
             }
 
@@ -360,10 +414,18 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 
         reel.Draw();
 
-        DrawCircle
+        if (atariLamp &&
+            (int)(GetNowCount() - atariLampEndTime) >= 0)
+        {
+            atariLamp = false;
+        }
+
+        int lampImage = (atariLamp || queuedBonusType != 0) ? hitLampImage : normalLampImage;
+
+        DrawExtendGraph
         (
-            700, 220, 25,
-            gogoLamp ? GetColor(255, 0, 0) : GetColor(60, 60, 60),
+            50, 50, 192, 192,
+            lampImage,
             TRUE
         );
 
@@ -390,7 +452,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
         ScreenFlip();
     }
 
+    DeleteSoundMem(hitSoundHandle);
+    DeleteSoundMem(startSoundHandle);
+    DeleteSoundMem(buttonSoundHandle);
+    DeleteGraph(normalLampImage);
+    DeleteGraph(hitLampImage);
+
     reel.ReleaseImages();
+
     DxLib_End();
     return 0;
 }
