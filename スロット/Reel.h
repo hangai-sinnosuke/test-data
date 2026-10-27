@@ -1,19 +1,13 @@
-#pragma once
+﻿#pragma once
 
 enum Symbol
 {
-    //ブドウ
-    GRAPE = 1,
-    //ゾウのリプレイ
-    REPLAY,
-    //チェリー
-    CHERRY,
-    //BAR
-    BAR,
-    //7
-    SEVEN,
-    //ベル
-    BELL
+    GRAPE = 1, // ブドウ
+    REPLAY,    // ゾウのリプレイ
+    CHERRY,    // チェリー
+    BAR,       // BAR
+    SEVEN,     // 7
+    BELL       // ベル
 };
 
 class Reel
@@ -24,36 +18,29 @@ public:
     bool LoadImages();
     void ReleaseImages();
 
-    //bonusType: 0=通常、1=BIG、2=REGULAR
-    void StartSpin(int bonusType = 0);
-
-    //回転中の表示を更新する
+    // bonusType: 0=通常、1=BIG、2=REGULAR
+    void StartSpin(int bonusType = 0, int forcedSymbol = 0);
     void Update();
-
-    //指定したリールを停止する（0=左、1=中、2=右）
     void StopReel(int reel);
 
     bool IsSpinning() const;
     void Draw() const;
-
-    // 指定リールの中央段の図柄番号を返す
-    int GetCenterSymbol(int reel) const;
-
-    // 指定リール・段の図柄番号を返す（段は0=上、1=中央、2=下）
     int GetSymbolAt(int reel, int row) const;
 
 private:
     static const int STRIP_LENGTH = 6;
+    static const int SYMBOL_WIDTH = 125;
+    static const int SYMBOL_HEIGHT = 90;
 
-    //リールに並ぶ図柄
     int symbolStrips[3][STRIP_LENGTH];
+    int imageHandles[7];
+    int stripImageHandles[3];
 
-    //各リールの現在位置と、回転開始時に決めた停止位置
     int positions[3];
     int targetPositions[3];
+    float scrollOffsets[3];
+    float stopTargetOffsets[3];
 
     bool spinning[3];
-    int frameCounters[3];
-
-    int imageHandles[7];
+    bool stopping[3];
 };

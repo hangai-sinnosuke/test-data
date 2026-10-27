@@ -1,16 +1,16 @@
-#include "DxLib.h"
+ï»¿#include "DxLib.h"
 #include "Reel.h"
 #include <cstdlib>
 #include <ctime>
 
-//ƒ}ƒEƒX‚Å‰Ÿ‚µ‚½uŠÔ‚¾‚¯”½‰‚·‚é
+// ãƒã‚¦ã‚¹å·¦ãƒœã‚¿ãƒ³ã‚’æŠ¼ã—ãŸç¬é–“ã ã‘ true ã‚’è¿”ã™
 bool IsNewClick(int mouseInput, int previousMouseInput)
 {
     return (mouseInput & MOUSE_INPUT_LEFT) != 0 &&
         (previousMouseInput & MOUSE_INPUT_LEFT) == 0;
 }
 
-// 1/255‚Å“–‘I‚µABIG‚ÆREGULAR‚ğ“¯‚¶Šm—¦‚Å‘I‚Ô
+// ã‚­ãƒ¼ãŒæŠ¼ã•ã‚ŒãŸç¬é–“ã ã‘ true ã‚’è¿”ã™
 bool IsNewKeyPress(int keyCode, bool& previousKeyState)
 {
     bool pressed = CheckHitKey(keyCode) != 0;
@@ -18,18 +18,36 @@ bool IsNewKeyPress(int keyCode, bool& previousKeyState)
     previousKeyState = pressed;
     return newPress;
 }
+//ãƒ–ãƒ‰ã‚¦ç¢ºç‡
+static const int GRAPE_CHANCE_DENOMINATOR = 9;
+//ãƒªãƒ—ãƒ¬ã‚¤ç¢ºç‡
+static const int REPLAY_CHANCE_DENOMINATOR = 6;
+//ãƒã‚§ãƒªãƒ¼ç¢ºç‡
+static const int CHERRY_CHANCE_DENOMINATOR = 25;
+//ãƒ™ãƒ«ç¢ºç‡
+static const int BELL_CHANCE_DENOMINATOR = 35;
+
+int DrawRoleLottery()
+{
+    // å½¹ãŒé‡ãªã£ãŸå ´åˆã¯ã€ä¸Šã‹ã‚‰å…ˆã«æˆç«‹ã—ãŸå½¹ã‚’ä½¿ã†ã€‚
+    if (rand() % GRAPE_CHANCE_DENOMINATOR == 0) return GRAPE;
+    if (rand() % REPLAY_CHANCE_DENOMINATOR == 0) return REPLAY;
+    if (rand() % CHERRY_CHANCE_DENOMINATOR == 0) return CHERRY;
+    if (rand() % BELL_CHANCE_DENOMINATOR == 0) return BELL;
+    return 0;
+}
 
 int DrawBonusLottery()
 {
-    if (rand() %  5== 0)
+    if (rand() %  50 == 0)
     {
-        return rand() % 2 + 1; // 1=BIGA2=REGULAR
+        return rand() % 2 + 1; // 1=BIGã€2=REGULAR
     }
 
-    return 0; // ‚Í‚¸‚ê
+    return 0; // ãƒœãƒ¼ãƒŠã‚¹ãªã—
 }
 
-//ƒ{ƒ^ƒ“‚ğ•`‰æ‚·‚é
+// ãƒœã‚¿ãƒ³ã‚’æç”»ã™ã‚‹
 void DrawButton(int x1, int y1, int x2, int y2, const char* label)
 {
     DrawBox(x1, y1, x2, y2, GetColor(80, 80, 80), TRUE);
@@ -37,7 +55,7 @@ void DrawButton(int x1, int y1, int x2, int y2, const char* label)
     DrawString(x1 + 10, y1 + 10, label, GetColor(255, 255, 255));
 }
 
-//ƒ}ƒEƒXˆÊ’u‚ªƒ{ƒ^ƒ“‚Ì’†‚©’²‚×‚é
+// ãƒã‚¦ã‚¹ãŒæŒ‡å®šç¯„å›²å†…ã«ã‚ã‚‹ã‹èª¿ã¹ã‚‹
 bool IsMouseIn(int mouseX, int mouseY,
     int x1, int y1, int x2, int y2)
 {
@@ -71,14 +89,20 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     int hitSoundHandle = LoadSoundMem("Sound/gako.mp3");
     int startSoundHandle = LoadSoundMem("Sound/reba.mp3");
     int buttonSoundHandle = LoadSoundMem("Sound/btn.mp3");
+    int maxBetSoundHandle = LoadSoundMem("Sound/st.mp3");
+    int bigWinSoundHandle = LoadSoundMem("Sound/i'm.mp3");
 
     if (hitSoundHandle == -1 ||
         startSoundHandle == -1 ||
-        buttonSoundHandle == -1)
+        buttonSoundHandle == -1 ||
+        maxBetSoundHandle == -1 ||
+        bigWinSoundHandle == -1)
     {
         if (hitSoundHandle != -1) DeleteSoundMem(hitSoundHandle);
         if (startSoundHandle != -1) DeleteSoundMem(startSoundHandle);
         if (buttonSoundHandle != -1) DeleteSoundMem(buttonSoundHandle);
+        if (maxBetSoundHandle != -1) DeleteSoundMem(maxBetSoundHandle);
+        if (bigWinSoundHandle != -1) DeleteSoundMem(bigWinSoundHandle);
         DxLib_End();
         return -1;
     }
@@ -93,6 +117,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
         DeleteSoundMem(hitSoundHandle);
         DeleteSoundMem(startSoundHandle);
         DeleteSoundMem(buttonSoundHandle);
+        DeleteSoundMem(maxBetSoundHandle);
+        DeleteSoundMem(bigWinSoundHandle);
         DxLib_End();
         return -1;
     }
@@ -109,14 +135,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
         DeleteSoundMem(hitSoundHandle);
         DeleteSoundMem(startSoundHandle);
         DeleteSoundMem(buttonSoundHandle);
+        DeleteSoundMem(maxBetSoundHandle);
+        DeleteSoundMem(bigWinSoundHandle);
         DxLib_End();
         return -1;
     }
 
-    // F1ƒL[‚Ì‰Ÿ‚µ‚Á‚Ï‚È‚µ‚Å˜A‘±‰ÁZ‚µ‚È‚¢‚½‚ß
+    // F1ã‚­ãƒ¼ã®é€£ç¶šå…¥åŠ›ã‚’é˜²ããŸã‚ã€å‰å›ã®ã‚­ãƒ¼çŠ¶æ…‹ã‚’ä¿å­˜ã™ã‚‹
     bool previousF1 = false;
 
-    //ƒf[ƒ^ƒJƒEƒ“ƒ^[
+    // ãƒ‡ãƒ¼ã‚¿ã‚«ã‚¦ãƒ³ã‚¿ãƒ¼ã®å€¤
     int totalGames = 0;
     int bigCount = 0;
     int regularCount = 0;
@@ -131,30 +159,29 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     bool previousDownArrow = false;
     bool previousRightArrow = false;
 
-    // ‰æ–Ê•\¦—p‚Ìƒƒ_ƒ‹”
+    // ç”»é¢ã«è¡¨ç¤ºã™ã‚‹ãƒ¡ãƒ€ãƒ«æšæ•°
     int displayedMedals = medals;
 
-    // ƒ`ƒFƒŠ[‚Å“–‘I‚µAŸ‚Ì‰ñ“]‚Å}•¿‚ğ‚»‚ë‚¦‚é
-    //¡‰ñ‚ÌƒQ[ƒ€‚ÅŠ|‚¯‚½–‡”
-    int currentBet = 0; 
-    //’â~Œã‚ÉŒ‹‰Ê‚ğ”»’è‚µ‚½‚©
+    // ã‚²ãƒ¼ãƒ ã®é€²è¡ŒçŠ¶æ…‹
+
+
+    // åœæ­¢å¾Œã«çµæœã‚’åˆ¤å®šã—ãŸã‹
     bool resultChecked = true;
-    //–³—¿ƒQ[ƒ€‚ªc‚Á‚Ä‚¢‚é‚©
+    // ãƒªãƒ—ãƒ¬ã‚¤ã§ç„¡æ–™ã‚²ãƒ¼ãƒ ã‚’è¡Œã†ã‹
     bool freeGameAvailable = false;
-    //ƒ‰ƒ“ƒv‚ªŒõ‚Á‚½‚©‚Ì”»•Ê
-    bool gogoLamp = false;
+
 
     bool atariLamp = false;
    
     int atariLampEndTime = 0;
-    //•\¦ŠÔFƒ~ƒŠ•b
+    // ãƒ©ãƒ³ãƒ—ã®ç‚¹ç¯æ™‚é–“ï¼ˆãƒŸãƒªç§’ï¼‰
     const int ATARI_LAMP_DURATION = 1000;
-    //“–‘I‚µ‚ÄA}•¿‚ª‚»‚ë‚¤‚Ì‚ğ‘Ò‚Á‚Ä‚¢‚éƒ{[ƒiƒX
+    // æ¬¡ã®ã‚²ãƒ¼ãƒ ã§é–‹å§‹ã™ã‚‹ãƒœãƒ¼ãƒŠã‚¹
     int queuedBonusType = 0;
     int pendingBonusType = 0;
-    //0=’ÊíA1=BIGA2=REGULAR
+    // ãƒœãƒ¼ãƒŠã‚¹ä¸­ã®çŠ¶æ…‹ï¼š0=é€šå¸¸ã€1=BIGã€2=REGULAR
     int activeBonusType = 0;
-    //ƒ{[ƒiƒX’†‚Ì—İŒv•¥‚¢o‚µ
+    // ãƒœãƒ¼ãƒŠã‚¹ä¸­ã«æ‰•ã„å‡ºã—ãŸãƒ¡ãƒ€ãƒ«æšæ•°
     int bonusPaid = 0;
 
     while (ProcessMessage() == 0 &&
@@ -174,7 +201,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
         bool downArrowPressed = IsNewKeyPress(KEY_INPUT_DOWN, previousDownArrow);
         bool rightArrowPressed = IsNewKeyPress(KEY_INPUT_RIGHT, previousRightArrow);
 
-        // F1‚ğ‰Ÿ‚µ‚½uŠÔ‚É50–‡’Ç‰Á
+        // F1ã‚­ãƒ¼ã‚’æŠ¼ã—ãŸç¬é–“ã«ãƒ¡ãƒ€ãƒ«ã‚’50æšè¿½åŠ ã™ã‚‹
         bool f1Pressed = CheckHitKey(KEY_INPUT_F1) != 0;
 
         if (f1Pressed && !previousF1)
@@ -184,7 +211,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 
         previousF1 = f1Pressed;
 
-        // •\¦ã‚Ì”‚ğAÀÛ‚Ìƒƒ_ƒ‹”‚Ö™X‚É’Ç‚¢‚Â‚©‚¹‚é
+        // è¡¨ç¤ºãƒ¡ãƒ€ãƒ«ã‚’å®Ÿéš›ã®æšæ•°ã¸å°‘ã—ãšã¤è¿‘ã¥ã‘ã‚‹
         if (displayedMedals < medals)
         {
             int step = 1 + (medals - displayedMedals) / 4;
@@ -202,7 +229,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
                 displayedMedals = medals;
         }
 
-        //ƒxƒbƒgƒ{ƒ^ƒ“‚ÅŠ|‚¯–‡”‚ğ‘I‘ğ‚·‚é
+        // ãƒ™ãƒƒãƒˆãƒœã‚¿ãƒ³ã‹ã‚‰æ›ã‘æšæ•°ã‚’é¸ã¶
         if (!reel.IsSpinning())
         {
             if (((clicked && IsMouseIn(mouseX, mouseY, 200, 470, 330, 510)) ||
@@ -210,7 +237,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
                 activeBonusType == 0)
             {
                 selectedBet = 3;
-                PlaySoundMem(buttonSoundHandle, DX_PLAYTYPE_BACK);
+                PlaySoundMem(maxBetSoundHandle, DX_PLAYTYPE_BACK);
             }
             else if (((clicked && IsMouseIn(mouseX, mouseY, 340, 470, 440, 510)) ||
                 mPressed) && activeBonusType == 0)
@@ -225,11 +252,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
             {
                 if (activeBonusType != 0)
                 {
-                    // ƒ{[ƒiƒX’†‚Í2–‡Š|‚¯‚¾‚¯
+                    // ãƒœãƒ¼ãƒŠã‚¹ä¸­ã¯2æšæ›ã‘
                     if (medals >= 2)
                     {
                         medals -= 2;
-                        currentBet = 2;
                         selectedBet = 0;
                         PlaySoundMem(startSoundHandle, DX_PLAYTYPE_BACK);
 
@@ -240,31 +266,29 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
                 }
                 else if (freeGameAvailable)
                 {
-                    // ƒŠƒvƒŒƒC‚Ì–³—¿ƒQ[ƒ€‚Íƒƒ_ƒ‹‚ğg‚í‚È‚¢
+                    // ãƒªãƒ—ãƒ¬ã‚¤ã§ã¯ãƒ¡ãƒ€ãƒ«ã‚’ä½¿ã‚ãšç„¡æ–™ã‚²ãƒ¼ãƒ ã‚’è¡Œã†
                     freeGameAvailable = false;
                     selectedBet = 0;
-                    currentBet = 0;
                     PlaySoundMem(startSoundHandle, DX_PLAYTYPE_BACK);
 
                     pendingBonusType = queuedBonusType;
                     queuedBonusType = 0;
                     atariLamp = false;
-                    gogoLamp = (pendingBonusType != 0);
-                    reel.StartSpin(pendingBonusType);
+                    int forcedSymbol = pendingBonusType == 0 ? DrawRoleLottery() : 0;
+                    reel.StartSpin(pendingBonusType, forcedSymbol);
                     totalGames++;
                     resultChecked = false;
                 }
                 else if (selectedBet > 0 && medals >= selectedBet)
                 {
-                    currentBet = selectedBet;
-                    medals -= currentBet;
+                    medals -= selectedBet;
                     PlaySoundMem(startSoundHandle, DX_PLAYTYPE_BACK);
 
                     pendingBonusType = queuedBonusType;
                     queuedBonusType = 0;
                     atariLamp = false;
-                    gogoLamp = (pendingBonusType != 0);
-                    reel.StartSpin(pendingBonusType);
+                    int forcedSymbol = pendingBonusType == 0 ? DrawRoleLottery() : 0;
+                    reel.StartSpin(pendingBonusType, forcedSymbol);
                     selectedBet = 0;
                     totalGames++;
                     resultChecked = false;
@@ -272,7 +296,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
             }
         }
 
-        //’â~ƒ{ƒ^ƒ“B¶‚©‚ç‡‚É0A1A2
+        // åœæ­¢ãƒœã‚¿ãƒ³ã¯å·¦ã‹ã‚‰0ã€1ã€2ç•ªãƒªãƒ¼ãƒ«ã«å¯¾å¿œ
         if (reel.IsSpinning())
         {
             if ((clicked && IsMouseIn(mouseX, mouseY, 200, 525, 300, 575)) ||
@@ -299,17 +323,18 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 
         reel.Update();
 
-        // ‘SƒŠ[ƒ‹‚ª~‚Ü‚Á‚½ŒãAˆê“x‚¾‚¯Œ‹‰Ê‚ğˆ—‚·‚é
+        // å…¨ãƒªãƒ¼ãƒ«åœæ­¢å¾Œã€ä¸€åº¦ã ã‘çµæœã‚’åˆ¤å®šã™ã‚‹
         if (!reel.IsSpinning() && !resultChecked)
         {
             if (pendingBonusType != 0)
             {
-                // BIG‚Ü‚½‚ÍREGULAR‚Ì}•¿‚ª‚»‚ë‚Á‚½‚Ì‚Åƒ{[ƒiƒXŠJn
+                // æŠ½é¸æ¸ˆã¿ã®ãƒœãƒ¼ãƒŠã‚¹å›³æŸ„ã‚’ãã‚ãˆã¦ãƒœãƒ¼ãƒŠã‚¹ã‚’é–‹å§‹ã™ã‚‹
                 activeBonusType = pendingBonusType;
 
                 if (activeBonusType == 1)
                 {
                     bigCount++;
+                    PlaySoundMem(bigWinSoundHandle, DX_PLAYTYPE_LOOP);
                 }
                 else
                 {
@@ -323,12 +348,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
             }
             else if (activeBonusType != 0)
             {
-                // ƒ{[ƒiƒX’†‚Í1ƒQ[ƒ€‚²‚Æ‚É12–‡‚ğ•¥‚¢o‚·
+                // ãƒœãƒ¼ãƒŠã‚¹ä¸­ã¯1ã‚²ãƒ¼ãƒ ã”ã¨ã«æœ€å¤§12æšã‚’æ‰•ã„å‡ºã™
                 int payoutTarget = (activeBonusType == 1) ? 280 : 100;
                 int payout = 12;
                 int remaining = payoutTarget - bonusPaid;
 
-                // —İŒv‚ª–Ú•W–‡”‚ğ’´‚¦‚È‚¢‚æ‚¤AÅŒã‚Ì•¥‚¢o‚µ‚ğ’²®
+                // è¦å®šæšæ•°ã‚’è¶…ãˆãªã„ã‚ˆã†æœ€çµ‚æ‰•ã„å‡ºã—ã‚’èª¿æ•´ã™ã‚‹
                 if (payout > remaining)
                 {
                     payout = remaining;
@@ -339,15 +364,18 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 
                 if (bonusPaid >= payoutTarget)
                 {
-                    // ‹K’è–‡”‚É“’B‚µ‚½‚çƒ{[ƒiƒXI—¹
+                    // è¦å®šæšæ•°ã«é”ã—ãŸã‚‰ãƒœãƒ¼ãƒŠã‚¹ã‚’çµ‚äº†ã™ã‚‹
+                    if (activeBonusType == 1)
+                    {
+                        StopSoundMem(bigWinSoundHandle);
+                    }
                     activeBonusType = 0;
                     bonusPaid = 0;
-                    gogoLamp = false;
                 }
             }
             else
             {
-                // ’Êí‚Í5–{‚Ìƒ‰ƒCƒ“‚ğ”»’è
+                // é€šå¸¸æ™‚ã¯5æœ¬ã®æœ‰åŠ¹ãƒ©ã‚¤ãƒ³ã‚’åˆ¤å®šã™ã‚‹
                 int lineRows[5][3] =
                 {
                     { 0, 0, 0 },
@@ -439,6 +467,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 
         DrawFormatString
         (
+            620, 470, GetColor(255, 255, 255),
+            "ç²å¾—æšæ•°: %d", bonusPaid
+        );
+
+        DrawFormatString
+        (
             620, 500, GetColor(255, 255, 255),
             "Medal: %d", displayedMedals
         );
@@ -455,11 +489,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     DeleteSoundMem(hitSoundHandle);
     DeleteSoundMem(startSoundHandle);
     DeleteSoundMem(buttonSoundHandle);
+    DeleteSoundMem(maxBetSoundHandle);
+    DeleteSoundMem(bigWinSoundHandle);
     DeleteGraph(normalLampImage);
     DeleteGraph(hitLampImage);
 
     reel.ReleaseImages();
 
     DxLib_End();
-    return 0;
+    return 0; // ãƒœãƒ¼ãƒŠã‚¹ãªã—
 }

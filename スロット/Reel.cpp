@@ -1,22 +1,22 @@
-#include "Reel.h"
+﻿#include "Reel.h"
 #include "DxLib.h"
 #include <cstdlib>
+#include <cmath>
 
-//ブドウ確率
-static const int SYMBOL_WEIGHT_GRAPE = 75;
-//リプレイ確率
-static const int SYMBOL_WEIGHT_REPLAY = 115;
-//チェリー確率
-static const int SYMBOL_WEIGHT_CHERRY = 3;
-//ベル確率
-static const int SYMBOL_WEIGHT_BELL = 10;
+// ブドウ図柄を選ぶ重み（当選確率そのものではない）
+static const int SYMBOL_WEIGHT_GRAPE = 20;
+// リプレイ成立確率は Main.cpp の分母設定で決まる
+// チェリー図柄を選ぶ重み
+static const int SYMBOL_WEIGHT_CHERRY = 20;
+// ベル図柄を選ぶ重み
+static const int SYMBOL_WEIGHT_BELL = 20;
 
 static int GetSymbolWeight(int symbol)
 {
     switch (symbol)
     {
     case GRAPE: return SYMBOL_WEIGHT_GRAPE;
-    case REPLAY: return SYMBOL_WEIGHT_REPLAY;
+    case REPLAY: return 0;
     case CHERRY: return SYMBOL_WEIGHT_CHERRY;
     case BELL: return SYMBOL_WEIGHT_BELL;
     case BAR: return 1;
@@ -62,9 +62,9 @@ Reel::Reel()
     // リール上の図柄の並び
     int initialStrips[3][STRIP_LENGTH] =
     {
-        { GRAPE, REPLAY, CHERRY, BAR, SEVEN, BELL }, // 左
-        { GRAPE, REPLAY, CHERRY, BAR, SEVEN, BELL }, // 中央
-        { GRAPE, REPLAY, BAR, GRAPE, SEVEN, BELL }  // 右：チェリーなし
+         { GRAPE, REPLAY, CHERRY, BAR, SEVEN, BELL }, // 左
+         { GRAPE, CHERRY, REPLAY, BAR, SEVEN, BELL }, // 中央：リプレイの前をチェリーにする
+         { GRAPE, REPLAY, BAR, GRAPE, SEVEN, BELL }  // 右：チェリーなし
     };
 
     for (int reel = 0; reel < 3; reel++)
@@ -75,6 +75,16 @@ Reel::Reel()
         }
     }
 
+    for (int reel = 0; reel < 3; reel++)
+    {
+        positions[reel] = 0;
+        targetPositions[reel] = 0;
+        scrollOffsets[reel] = 0.0f;
+        stopTargetOffsets[reel] = 0.0f;
+        spinning[reel] = false;
+        stopping[reel] = false;
+        stripImageHandles[reel] = -1;
+    }
     for (int i = 0; i < 7; i++)
     {
         imageHandles[i] = -1;
@@ -94,13 +104,6 @@ bool Reel::LoadImages()
         "img/beru.png"   // ベル
     };
 
-    for (int reel = 0; reel < 3; reel++)
-    {
-        positions[reel] = 0;
-        targetPositions[reel] = 0;
-        spinning[reel] = false;
-        frameCounters[reel] = 0;
-    }
 
     for (int symbol = 1; symbol <= 6; symbol++)
     {
@@ -113,11 +116,52 @@ bool Reel::LoadImages()
         }
     }
 
+    // 各リールの図柄を縦につないだ一枚の画像を作る
+    int previousDrawScreen = GetDrawScreen();
+    for (int reel = 0; reel < 3; reel++)
+    {
+        int stripHeight = STRIP_LENGTH * SYMBOL_HEIGHT;
+        stripImageHandles[reel] = MakeScreen(SYMBOL_WIDTH, stripHeight, TRUE);
+        if (stripImageHandles[reel] == -1)
+        {
+            SetDrawScreen(previousDrawScreen);
+            ReleaseImages();
+            return false;
+        }
+
+        if (SetDrawScreen(stripImageHandles[reel]) == -1)
+        {
+            SetDrawScreen(previousDrawScreen);
+            ReleaseImages();
+            return false;
+        }
+
+        ClearDrawScreen();
+        for (int index = 0; index < STRIP_LENGTH; index++)
+        {
+            int symbol = symbolStrips[reel][index];
+            DrawExtendGraph(
+                0, index * SYMBOL_HEIGHT,
+                SYMBOL_WIDTH, (index + 1) * SYMBOL_HEIGHT,
+                imageHandles[symbol], TRUE
+            );
+        }
+    }
+    SetDrawScreen(previousDrawScreen);
     return true;
 }
 
 void Reel::ReleaseImages()
 {
+    for (int reel = 0; reel < 3; reel++)
+    {
+        if (stripImageHandles[reel] != -1)
+        {
+            DeleteGraph(stripImageHandles[reel]);
+            stripImageHandles[reel] = -1;
+        }
+    }
+
     for (int symbol = 1; symbol <= 6; symbol++)
     {
         if (imageHandles[symbol] != -1)
@@ -128,7 +172,7 @@ void Reel::ReleaseImages()
     }
 }
 
-void Reel::StartSpin(int bonusType)
+void Reel::StartSpin(int bonusType, int forcedSymbol)
 {
     if (bonusType == 1)
     {
@@ -143,6 +187,28 @@ void Reel::StartSpin(int bonusType)
         targetPositions[0] = 4;
         targetPositions[1] = 4;
         targetPositions[2] = 2;
+    }
+    else if (forcedSymbol != 0)
+    {
+        // 抽選された役を中央段に表示する。チェリーは左リールだけに表示する。
+        for (int reel = 0; reel < 3; reel++)
+        {
+            if (forcedSymbol == CHERRY && reel > 0)
+            {
+                targetPositions[reel] = ChooseWeightedPosition(symbolStrips[reel], STRIP_LENGTH);
+                continue;
+            }
+
+            targetPositions[reel] = 0;
+            for (int index = 0; index < STRIP_LENGTH; index++)
+            {
+                if (symbolStrips[reel][index] == forcedSymbol)
+                {
+                    targetPositions[reel] = index;
+                    break;
+                }
+            }
+        }
     }
     else
     {
@@ -216,11 +282,14 @@ void Reel::StartSpin(int bonusType)
                     symbolsOnLine[1] == REPLAY &&
                     symbolsOnLine[2] == REPLAY)
                 {
-                    lineWinningSymbol = REPLAY;
+                    // リプレイ成立は専用の1/N抽選だけで起こす
+                    forbidden = true;
                 }
 
+                // 通常抽選では、ブドウ・ベルの揃いも作らない。
                 if (lineWinningSymbol != 0)
                 {
+                    forbidden = true;
                     if (winningSymbol != 0 &&
                         winningSymbol != lineWinningSymbol)
                     {
@@ -238,12 +307,15 @@ void Reel::StartSpin(int bonusType)
     for (int reel = 0; reel < 3; reel++)
     {
         spinning[reel] = true;
-        frameCounters[reel] = 0;
+        stopping[reel] = false;
+        stopTargetOffsets[reel] = scrollOffsets[reel];
     }
 }
 
 void Reel::Update()
 {
+    const float normalSpeed = 12.0f;
+
     for (int reel = 0; reel < 3; reel++)
     {
         if (!spinning[reel])
@@ -251,26 +323,64 @@ void Reel::Update()
             continue;
         }
 
-        // 数フレームごとに図柄を1つ進めて回転して見せる
-        frameCounters[reel]++;
-        if (frameCounters[reel] >= 7)
+        if (!stopping[reel])
         {
-            frameCounters[reel] = 0;
-            positions[reel] = (positions[reel] + 1) % STRIP_LENGTH;
+            // 回転中はストリップ画像を一定速度で流す
+            scrollOffsets[reel] -= normalSpeed;
+            continue;
+        }
+
+        // 停止位置に近づくほど速度を落とす
+        float remaining = scrollOffsets[reel] - stopTargetOffsets[reel];
+        float step = remaining * 0.08f;
+        if (step > normalSpeed)
+        {
+            step = normalSpeed;
+        }
+        if (step < 1.0f)
+        {
+            step = 1.0f;
+        }
+
+        if (remaining <= step)
+        {
+            scrollOffsets[reel] = stopTargetOffsets[reel];
+            positions[reel] = targetPositions[reel];
+            spinning[reel] = false;
+            stopping[reel] = false;
+        }
+        else
+        {
+            scrollOffsets[reel] -= step;
         }
     }
 }
 
 void Reel::StopReel(int reel)
 {
-    if (reel < 0 || reel >= 3 || !spinning[reel])
+    if (reel < 0 || reel >= 3 || !spinning[reel] || stopping[reel])
     {
         return;
     }
 
-    // 先に決めておいた位置で停止
-    positions[reel] = targetPositions[reel];
-    spinning[reel] = false;
+    const float stripHeight = static_cast<float>(STRIP_LENGTH * SYMBOL_HEIGHT);
+    float currentCenter = std::fmod(scrollOffsets[reel], stripHeight);
+    if (currentCenter < 0.0f)
+    {
+        currentCenter += stripHeight;
+    }
+
+    float targetCenter = static_cast<float>(targetPositions[reel] * SYMBOL_HEIGHT);
+    float distance = currentCenter - targetCenter;
+    if (distance < 0.0f)
+    {
+        distance += stripHeight;
+    }
+
+    // ボタンを押してから少なくとも2周して停止する
+    distance += stripHeight * 2.0f;
+    stopTargetOffsets[reel] = scrollOffsets[reel] - distance;
+    stopping[reel] = true;
 }
 
 bool Reel::IsSpinning() const
@@ -282,37 +392,45 @@ void Reel::Draw() const
 {
     DrawBox(200, 150, 600, 450, GetColor(30, 30, 30), TRUE);
 
+    const int stripHeight = STRIP_LENGTH * SYMBOL_HEIGHT;
+    const int viewHeight = SYMBOL_HEIGHT * 3;
+
     for (int reel = 0; reel < 3; reel++)
     {
-        for (int row = 0; row < 3; row++)
+        int x = 205 + reel * 130;
+        int y = 160;
+        int centerPixel = static_cast<int>(scrollOffsets[reel]) % stripHeight;
+        if (centerPixel < 0)
         {
-            int x = 205 + reel * 130;
-            int y = 160 + row * 95;
+            centerPixel += stripHeight;
+        }
+        int sourceY = (centerPixel - SYMBOL_HEIGHT + stripHeight) % stripHeight;
+        int firstHeight = viewHeight;
 
-            // 中段がpositionsの図柄になるように上下を選ぶ
-            int stripIndex =
-                (positions[reel] + row + STRIP_LENGTH - 1) % STRIP_LENGTH;
-            int symbol = symbolStrips[reel][stripIndex];
+        // ストリップ末尾を越えたら、先頭部分を続けて描く
+        if (sourceY + firstHeight > stripHeight)
+        {
+            firstHeight = stripHeight - sourceY;
+        }
 
-            DrawExtendGraph(
-                x, y, x + 125, y + 90,
-                imageHandles[symbol],
-                TRUE
+        DrawRectGraph(
+            x, y, 0, sourceY,
+            SYMBOL_WIDTH, firstHeight,
+            stripImageHandles[reel], TRUE
+        );
+
+        int remainingHeight = viewHeight - firstHeight;
+        if (remainingHeight > 0)
+        {
+            DrawRectGraph(
+                x, y + firstHeight, 0, 0,
+                SYMBOL_WIDTH, remainingHeight,
+                stripImageHandles[reel], TRUE
             );
         }
     }
 }
 
-int Reel::GetCenterSymbol(int reel) const
-{
-    if (reel < 0 || reel >= 3)
-    {
-        return 0;
-    }
-
-    // positionsは中央段の図柄位置
-    return symbolStrips[reel][positions[reel]];
-}
 
 int Reel::GetSymbolAt(int reel, int row) const
 {
